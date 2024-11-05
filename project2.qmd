@@ -1,0 +1,134 @@
+---
+title: "project2"
+format: html
+editor: visual
+---
+
+## Project 2
+
+Team Members:
+
+-   Mateo Bandala Jacques \| abandal1\@jh.edu
+
+-   María Camila Restrepo \| mrestre\@jh.edu
+
+# Part 1
+
+```{r}
+#Set-up to obtain the data 
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("tidycensus")) install.packages("tidycensus")
+
+library(tidycensus)
+library(tidyverse)
+library(purrr)
+
+census_api_key("0197bfb814c966dc864f07a942ef2b02795a5f28")
+
+
+#Study question: 
+
+
+#First, we will create a function to make it easier to extract the populatio data we're intested in
+
+GET_CENSUS_ACS <- function(state, year) {
+    if (!is.numeric(year)) {
+    stop("The 'year' argument must be numeric")
+    }
+  
+    if (!(state %in% state.abb)) {
+    stop("The 'state' argument must be a valid two-letter state code.")
+  }
+  
+  data <- get_acs(
+    geography = "county",
+    variables = c(
+      medincome = "B19013_001", 
+      total_pop = "B01003_001", 
+      white = "B02001_002", 
+      black = "B02001_003", 
+      aian = "B02001_004",
+      asian = "B02001_005", 
+      nhpi = "B02001_006", 
+      other = "B02001_007"
+    ), 
+    state = state, 
+    year = year
+  )
+  
+  return(data)
+}
+
+```
+
+::: callout-note
+## Let's use our first function from map
+
+We will use it to pull Maryland data for the years 2010, 2015, and 2020
+:::
+
+```{r}
+#Now using our function, let's pull the data using one of the MAP functions
+
+years <- c(2010, 2015, 2020)
+MD_LIST <- map(years, ~ GET_CENSUS_ACS("MD", .x))
+names(MD_LIST) <- paste0("md_", years)
+```
+
+::: callout-note
+## Above, we have made three calls to the census API
+:::
+
+```{r}
+
+# Now, let's clear the data
+
+
+# Using our second MAP function, let's add the year to each of the items in the list
+MD_LIST <- imap(MD_LIST, ~ mutate(.x, year = as.integer(gsub("md_", "", .y))))
+
+
+
+#Next, we will turn them into data frames, append them, and clean the county names, so that they are easier to see in a plot
+md_2010 <- MD_LIST[["md_2010"]]
+md_2015 <- MD_LIST[["md_2015"]]
+md_2020 <- MD_LIST[["md_2020"]]
+
+
+MD_COMBINED <- rbind(md_2010, md_2015, md_2020)
+
+
+#Now, with tidyverse functions, clean the county names
+MD_COMBINED <- MD_COMBINED %>%
+  mutate(NAME = str_replace(NAME, " County, Maryland", "")) %>%
+  mutate(NAME = str_replace(NAME, " city, Maryland", " City")) 
+
+
+#For our first plot, let's explore how much median income has changed for each county in each of the years
+
+
+
+
+MD_COMBINED %>%
+  filter(variable=="medincome")%>%
+ggplot(aes(x = factor(year), y = estimate, color = NAME, group = NAME)) +
+  geom_point() +
+  geom_path()+
+  labs(
+    title = "Median Income Change Over Time by County",
+    x = "Year",
+    y = "Median Income (USD)",
+    color = "County"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+
+```
+
+```{r}
+
+
+
+```
