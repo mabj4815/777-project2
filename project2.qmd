@@ -18,10 +18,13 @@ Team Members:
 #Set-up to obtain the data 
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("tidycensus")) install.packages("tidycensus")
+if (!require("RColorBrewer")) install.packages("RColorBrewer")
 
 library(tidycensus)
 library(tidyverse)
 library(purrr)
+library(lubridate)
+library(RColorBrewer)
 
 census_api_key("0197bfb814c966dc864f07a942ef2b02795a5f28")
 
@@ -107,6 +110,17 @@ MD_COMBINED <- MD_COMBINED %>%
 #For our first plot, let's explore how much median income has changed for each county in each of the years
 
 
+####### This is just to reorder the counties in a way that makes sense
+county_order <- MD_COMBINED %>%
+  filter(variable == "medincome", year == 2020) %>%
+  group_by(NAME) %>%
+  summarize(mean_income_2015 = mean(estimate, na.rm = TRUE)) %>%
+  arrange(desc(mean_income_2015)) %>%
+  pull(NAME)
+
+# Reorder NAME based on mean income in 2020 for the plot)
+MD_COMBINED <- MD_COMBINED %>%
+  mutate(NAME = factor(NAME, levels = county_order))
 
 
 MD_COMBINED %>%
@@ -116,19 +130,107 @@ ggplot(aes(x = factor(year), y = estimate, color = NAME, group = NAME)) +
   geom_path()+
   labs(
     title = "Median Income Change Over Time by County",
+    subtitle = "Legend ordered by median income in 2020",
+    caption = paste0("Plot generated on ",today()),
     x = "Year",
     y = "Median Income (USD)",
     color = "County"
   ) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 
 
 ```
 
-```{r}
+::: callout-note
+## Now, let's explore if race distribution is associated to median income
+:::
 
+```{r}
+#First, let's explore the race distribution by county
+
+MD_RACE_PERCENT <- MD_COMBINED %>%
+  filter(variable %in% c("total_pop", "white", "black", "aian", "asian", "nhpi", "other")) %>%
+  group_by(GEOID, NAME, year) %>%
+  mutate(
+    percentage = ifelse(variable == "total_pop", NA, (estimate / estimate[variable == "total_pop"]) * 100)
+  ) %>%
+  filter(variable != "total_pop") %>%
+  ungroup() %>%
+  mutate(
+    race = fct_recode(variable,
+                      "White" = "white",
+                      "Black" = "black",
+                      "American Indian/Alaska Native" = "aian",
+                      "Asian" = "asian",
+                      "Native Hawaiian/Pacific Islander" = "nhpi",
+                      "Other" = "other"))
+
+#Reorder the variable by peecentage white
+county_order <- MD_RACE_PERCENT %>%
+  filter(variable == "white", year == 2020) %>%
+  arrange(desc(percentage)) %>%
+  pull(NAME)
+
+# Reorder NAME based on mean income in 2020 for the plot)
+MD_RACE_PERCENT <- MD_RACE_PERCENT %>%
+  mutate(NAME = factor(NAME, levels = county_order))
+
+
+MD_RACE_PERCENT %>%
+  filter(year==2020)%>%
+  ggplot(aes(x = NAME, y = percentage, fill = race)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(
+    title = "Racial Composition by County",
+    subtitle = "Data from the 2020 ACS",
+    x = "County",
+    y = "Percentage of Total Population",
+    fill = "Race",
+    caption  = paste0("Plot generated on ", today())
+  ) +
+  scale_fill_brewer(palette="Dark2")+
+  scale_y_continuous(labels = scales::percent_format()) +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+# finally, let's explore if racial composition is associated to median income
+
+
+
+MD_PERCENT <- MD_COMBINED %>%
+  filter(variable %in% c("total_pop", "white", "black", "aian", "asian", "nhpi", "other", "medincome")) %>%
+  select(GEOID, NAME, year, variable, estimate) %>%
+  pivot_wider(names_from = variable, values_from = estimate) %>%
+  filter(!is.na(total_pop), !is.na(medincome)) %>%
+  mutate(
+    perc_white = (white / total_pop) * 100,
+    perc_black = (black / total_pop) * 100,
+    perc_aian = (aian / total_pop) * 100,
+    perc_asian = (asian / total_pop) * 100,
+    perc_nhpi = (nhpi / total_pop) * 100,
+    perc_other = (other / total_pop) * 100
+  )   
+
+
+ggplot(MD_PERCENT, aes(x = perc_black, y = medincome)) +
+  geom_point(aes(color = NAME), alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +  # Add a linear trend line
+  labs(
+    title = "Association between Percentage of Black Population and Median Income",
+    subtitle = "Each point represents a county",
+    x = "Percentage of Black Population",
+    y = "Median Income (USD)",
+    color = "County"
+  ) +
+  theme_minimal()
 
 
 ```
