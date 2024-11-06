@@ -26,7 +26,9 @@ library(purrr)
 library(lubridate)
 library(RColorBrewer)
 
-census_api_key("0197bfb814c966dc864f07a942ef2b02795a5f28")
+
+
+census_api_key(Sys.getenv("CENSUS_API_KEY"))
 
 
 #Study question: 
@@ -65,9 +67,9 @@ GET_CENSUS_ACS <- function(state, year) {
 ```
 
 ::: callout-note
-## Let's use our first function from map
+## Let's use our first function from purr
 
-We will use it to pull Maryland data for the years 2010, 2015, and 2020
+We will use map to pull Maryland data for the years 2010, 2015, and 2020
 :::
 
 ```{r}
@@ -76,6 +78,9 @@ We will use it to pull Maryland data for the years 2010, 2015, and 2020
 years <- c(2010, 2015, 2020)
 MD_LIST <- map(years, ~ GET_CENSUS_ACS("MD", .x))
 names(MD_LIST) <- paste0("md_", years)
+
+saveRDS(MD_LIST, file = "Data/MD_Census_List.rds")
+
 ```
 
 ::: callout-note
