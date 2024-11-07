@@ -19,12 +19,15 @@ Team Members:
 if (!require("tidyverse")) install.packages("tidyverse")
 if (!require("tidycensus")) install.packages("tidycensus")
 if (!require("RColorBrewer")) install.packages("RColorBrewer")
+if (!require("gapminder")) install.packages("gapminder")
 
 library(tidycensus)
 library(tidyverse)
 library(purrr)
 library(lubridate)
 library(RColorBrewer)
+library(rvest)
+library(gapminder)
 
 
 
@@ -79,7 +82,7 @@ years <- c(2010, 2015, 2020)
 MD_LIST <- map(years, ~ GET_CENSUS_ACS("MD", .x))
 names(MD_LIST) <- paste0("md_", years)
 
-saveRDS(MD_LIST, file = "Data/MD_Census_List.rds")
+MD_LIST_SAVE <- MD_LIST
 
 ```
 
@@ -87,12 +90,18 @@ saveRDS(MD_LIST, file = "Data/MD_Census_List.rds")
 ## Above, we have made three calls to the census API
 :::
 
+::: callout-note
+## Question to Investigate:
+
+How have median income and race fluctuated in Maryland's counties, and are they related to each other?
+:::
+
 ```{r}
 
-# Now, let's clear the data
+# Now, let's clean the data
 
 
-# Using our second MAP function, let's add the year to each of the items in the list
+# Using our second purrr function, let's add the year to each of the items in the list
 MD_LIST <- imap(MD_LIST, ~ mutate(.x, year = as.integer(gsub("md_", "", .y))))
 
 
@@ -209,7 +218,6 @@ MD_RACE_PERCENT %>%
 # finally, let's explore if racial composition is associated to median income
 
 
-
 MD_PERCENT <- MD_COMBINED %>%
   filter(variable %in% c("total_pop", "white", "black", "aian", "asian", "nhpi", "other", "medincome")) %>%
   select(GEOID, NAME, year, variable, estimate) %>%
@@ -225,17 +233,95 @@ MD_PERCENT <- MD_COMBINED %>%
   )   
 
 
-ggplot(MD_PERCENT, aes(x = perc_black, y = medincome)) +
+ggplot(MD_PERCENT, aes(x = perc_white, y = medincome)) +
   geom_point(aes(color = NAME), alpha = 0.7) +
   geom_smooth(method = "lm", se = FALSE, color = "blue") +  # Add a linear trend line
   labs(
-    title = "Association between Percentage of Black Population and Median Income",
+    title = "Association of Percentage of White Population and Median Income",
     subtitle = "Each point represents a county",
-    x = "Percentage of Black Population",
+    x = "Percentage of White Population",
     y = "Median Income (USD)",
-    color = "County"
+    color = "County",
+    caption = "Each county has a dot for 2010, 2015, and 2020"
   ) +
-  theme_minimal()
+  theme_minimal()  +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1))
 
 
 ```
+
+### Findings from Part 1:
+
+Through this analysis, we have explored the association between median income and race in Maryland counties. First, we have used our API keys to download ACS data for the state of Maryland for the years 2010, 2015, and 2020. We used purrr functions to download and clean the data. Our first analysis involved plotting the changes to median income by county. In here, we found that every county has had an increase in median income from 2010 to 2020, although a couple of them dipped in 2015. Next, we investigated racial composition by county, and found that percentage of population that is White ranges from 12% in Prince George's County, to almost 100% in Garrett country. Next, we explored if percentage of White population is associated to median income using a scatter plot with a fit regression. We found that although there is significant variability in median income by county, percentage of population that is White does not seem to significantly be associated to median income.
+
+
+# Part 2
+
+
+::: callout-note
+## For this part, we will examine the world's tallest buildings
+:::
+
+```{r}
+
+#Read in the wikipedia page on tallest skyscrapers
+skyscrapers <- read_html("https://en.wikipedia.org/wiki/List_of_tallest_buildings")
+
+#Obtain the table
+
+skyscrapers_table <- html_table(skyscrapers, header=TRUE, fill = TRUE)[[2]]
+
+#Do some data cleaning
+
+#There are two columns witht the same name, so first rename one
+names(skyscrapers_table)[which(names(skyscrapers_table) == "Height[14]")[1]] <- "height_meters"
+
+skyscrapers_table <- skyscrapers_table %>%
+  select(2:length(skyscrapers_table)) %>% #This gets rid of that empty column at the beginning
+  rename(height_feet =`Height[14]`) %>%
+  filter(Name != "Name") %>% #This is the empty row at the top
+  select(-Image, -Comments) %>%
+    mutate(Floors = str_remove(Floors, "\\(.*")) %>%
+  mutate(Country = fct_collapse(Country,
+                               "United Arab Emirates" = c("UAE", "United Arab Emirates"))) #These are the same country
+
+
+#Add the continent from gapminder
+continents <- gapminder %>%
+  select(country, continent) %>%
+  group_by(country) %>%
+  slice_head() %>%
+  ungroup() %>%
+  mutate(country= fct_recode(country,
+                             "South Korea" = "Korea, Dem. Rep."
+))
+
+skyscrapers_table <- left_join(skyscrapers_table, continents, by=c("Country" = "country"))
+
+#Manually add some that didn't match
+
+skyscrapers_table$continent[skyscrapers_table$Country=="Russia"] <- "Europe" #Most skyscrapers are in Moscow or St. Petersburg, so let's assign Europe
+
+skyscrapers_table$continent[skyscrapers_table$Country=="United Arab Emirates"] <- "Asia" 
+
+#Now let's see, by country, who was the most skyscrapers
+
+
+skyscrapers_table %>%
+  ggplot(aes(x= fct_infreq(Country), fill=continent)) +
+  geom_bar() +
+  labs (x= "Country", y="Skyscraper count", title = "Number of mega-tall skyscrapers by country", 
+        subtitle ="Mega-talls are buildings ≥350 m", caption = "Defined as architectural height") +
+  coord_flip() +
+    theme(
+    plot.title = element_text(hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5))
+
+
+```
+
+After extracting data on super-tall skyscrapers from Wikipedia, we have found that most buildings over 350 meters in height are in Asia. Not only that, but over 50% of of them are in China. 
+The only country in the Americas with a super-tall skyscraper is the United States, although Mexico and Brazil have one under construction. Similarly, the only super-tall skyscrapers in Africa are in Egypt. A limitation of this data is that Wikipedia is crowd-sourced, and is susceptible to changes by editors. Similarly, the information might be outdated, especially for articles with less traffic.
